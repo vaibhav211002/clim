@@ -1,10 +1,13 @@
 {
   "name": "cli-password-manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "index.js",
   "scripts": {
     "t" : "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "clim": "index.js"
   },
   "type": "module",
   "keywords": [],
