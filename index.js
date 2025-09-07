@@ -202,4 +202,4 @@ if (!currentUser) return console.log(chalk.red(" Login first!"));
   })
   .demandCommand()
   .help()
-  .parse(process.argv, { bin: "clim" });
+  .parse();
