@@ -1,0 +1,207 @@
+#!/usr/bin/env node
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
+import chalk from "chalk";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
+import { Low } from "lowdb";
+import { JSONFile } from "lowdb/node";
+import readlineSync from "readline-sync";
+import os from "os";
+import path from "path";
+import fs from "fs";
+
+// 🔹 Global DB location
+const dbPath = path.join(os.homedir(), ".cli-password-manager", "db.json");
+// Session file to persist logged-in user
+const sessionPath = path.join(os.homedir(), ".cli-password-manager", "session.json");
+
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+// Create adapter
+const adapter = new JSONFile(dbPath);
+
+// Create DB instance
+const db = new Low(adapter, { users: [] }); // <-- provide default data here
+
+// Read from file (creates file if missing)
+await db.read();
+
+// db.data now guaranteed to exist
+db.data ||= { users: [] }; 
+await db.write();
+
+
+// Encryption setup
+const ALGO = "aes-256-ctr";
+const SECRET = crypto.createHash("sha256").update("supersecretkey123").digest(); // 32 bytes key
+const IV = crypto.randomBytes(16); // Initialization vector
+
+function encrypt(text) {
+  const cipher = crypto.createCipheriv(ALGO, SECRET, IV);
+  let crypted = cipher.update(text, "utf8", "hex");
+  crypted += cipher.final("hex");
+  return IV.toString("hex") + ":" + crypted; // store IV with ciphertext
+}
+
+function decrypt(text) {
+  const parts = text.split(":");
+  const iv = Buffer.from(parts.shift(), "hex");
+  const encryptedText = parts.join(":");
+
+  const decipher = crypto.createDecipheriv(ALGO, SECRET, iv);
+  let dec = decipher.update(encryptedText, "hex", "utf8");
+  dec += decipher.final("utf8");
+  return dec;
+}
+
+// In-memory session
+var currentUser = null;
+
+// saving session details 
+function saveSession(username) {
+  fs.writeFileSync(sessionPath, JSON.stringify({ username }));
+}
+
+function loadSession() {
+  if (!fs.existsSync(sessionPath)) return null;
+  const data = JSON.parse(fs.readFileSync(sessionPath, "utf-8"));
+  return db.data.users.find(u => u.username === data.username) || null;
+}
+
+function clearSession() {
+  if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+}
+
+
+// CLI setup
+yargs(hideBin(process.argv))
+  // Register
+  .command("register <username>", "Register new user", {}, async (argv) => {
+    await db.read();
+    if (db.data.users.length > 0) {
+      return console.log(chalk.red(" An account already exists on this computer!"));
+    }
+
+    const masterPass = readlineSync.question("Set master password: ", {
+      hideEchoBack: true,
+      mask: "*",
+    });
+
+    const hashed = await bcrypt.hash(masterPass, 10);
+    db.data.users.push({ username: argv.username, password: hashed, vault: [] });
+    await db.write();
+    console.log(chalk.green(" User registered!"));
+  })
+  // Login
+  .command("login <username>", "Login user", {}, async (argv) => {
+    await db.read();
+    const user = db.data.users.find(u => u.username === argv.username);
+    if (!user) return console.log(chalk.red(" User not found"));
+
+    const pass = readlineSync.question("Enter master password: ", {
+      hideEchoBack: true,
+      mask: "*",
+    });
+
+    const valid = await bcrypt.compare(pass, user.password);
+    if (!valid) return console.log(chalk.red(" Wrong password"));
+
+    currentUser = user;
+    saveSession(argv.username);
+    console.log(chalk.green(` Logged in as ${argv.username}`));
+    console.log(currentUser);
+      
+})
+  // Add password
+  .command("add <platform> <username>", "Add password entry", {}, async (argv) => {
+if (!currentUser) currentUser = loadSession();
+if (!currentUser) return console.log(chalk.red(" Login first!"));
+
+    const pass = readlineSync.question(`Enter password for ${argv.platform}: `, {
+      hideEchoBack: true,
+      mask: "*",
+    });
+
+    currentUser.vault.push({
+      platform: argv.platform,
+      username: argv.username,
+      password: encrypt(pass),
+    });
+
+    await db.write();
+    console.log(chalk.green(` Password stored for ${argv.platform}`));
+  })
+  // Get password
+  .command("get <platform>", "Retrieve password", {}, async (argv) => {
+if (!currentUser) currentUser = loadSession();
+if (!currentUser) return console.log(chalk.red("❌ Login first!"));
+
+    const entry = currentUser.vault.find(v => v.platform === argv.platform);
+    if (!entry) return console.log(chalk.yellow(" No entry found"));
+
+    console.log(chalk.blue(` Username: ${entry.username}`));
+    console.log(chalk.green(` Password: ${decrypt(entry.password)}`));
+  })
+  // List platforms
+  .command("list", "List all stored platforms", {}, () => {
+if (!currentUser) currentUser = loadSession();
+if (!currentUser) return console.log(chalk.red(" Login first!"));
+    if (currentUser.vault.length === 0) return console.log(chalk.yellow(" No passwords stored"));
+
+    currentUser.vault.forEach(v => console.log(chalk.cyan(v.platform)));
+  })
+  // Edit password
+  .command("edit <platform>", "Edit password for a platform", {}, async (argv) => {
+if (!currentUser) currentUser = loadSession();
+if (!currentUser) return console.log(chalk.red(" Login first!"));
+
+    const entry = currentUser.vault.find(v => v.platform === argv.platform);
+    if (!entry) return console.log(chalk.yellow(" No entry found for this platform"));
+
+    const newPass = readlineSync.question(`Enter new password for ${argv.platform}: `, {
+      hideEchoBack: true,
+      mask: "*",
+    });
+
+    entry.password = encrypt(newPass);
+    await db.write();
+    console.log(chalk.green(`✅ Password updated for ${argv.platform}`));
+  })
+  // Logout
+  .command("logout", "Logout current user", {}, () => {
+    clearSession();
+    currentUser = null;
+    console.log(chalk.yellow(" Logged out! ~ Galactico"));
+    console.log(currentUser);
+  })
+  // Delete account
+  .command("delete <username>", "Delete account permanently", {}, async (argv) => {
+    await db.read();
+    if (db.data.users.length === 0) return console.log(chalk.red("❌ No account exists to delete!"));
+
+    const systemUser = os.userInfo().username;
+    const enteredSystemUser = readlineSync.question("Enter your system username to confirm: ");
+    if (enteredSystemUser !== systemUser) return console.log(chalk.red("❌ System username mismatch!"));
+
+    const enteredPass = readlineSync.question("Enter your master password: ", {
+      hideEchoBack: true,
+      mask: "*",
+    });
+
+    const user = db.data.users.find(u => u.username === argv.username);
+    if (!user) return console.log(chalk.red("❌ Username not found"));
+
+    const valid = await bcrypt.compare(enteredPass, user.password);
+    if (!valid) return console.log(chalk.red("❌ Wrong master password"));
+
+    // Delete account
+    db.data.users = db.data.users.filter(u => u.username !== argv.username);
+    await db.write();
+    currentUser = null;
+
+    console.log(chalk.yellow(" Account deleted permanently!"));
+  })
+  .demandCommand()
+  .help()
+  .parse();
