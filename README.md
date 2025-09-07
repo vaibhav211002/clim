@@ -23,28 +23,28 @@ Store, retrieve, edit, and manage your platform passwords locally on your machin
 ```bash
 npm install -g cli-password-manager
 ```
-To use the Package : 
+### To use the Package : 
 ```bash
  clim
 
 ```
-To Open Help Page 
+### To Open Help Page 
 ```bash
  clim --help
 
 ```
-To Register a User  
+### To Register a User  
 ```bash
  clim register <username>
 
 ```
-To Login a User
+### To Login a User
 ```bash
  clim login <username>
 ```
 You will be asked to enter your password.
 
-Add Platform Password 
+### Add Platform Password 
 ```bash
  clim add <platform> <username>
 ```
@@ -53,27 +53,27 @@ Add Platform Password
   clim add github mygithubuser
 
 ```
-Retrieve a Password
+### Retrieve a Password
 ```bash
  clim get <platform>
 
 ```
-List all Stored Password 
+### List all Stored Password 
 ```bash
  clim list
 
 ```
-Edit a Platform Password
+### Edit a Platform Password
 ```bash
  clim edit <platform>
 
 ```
-Logout 
+### Logout 
 ```bash
  clim logout
 
 ```
-Delete User (in case you forgot password : Warning : All passwrods will be deleted.)
+### Delete User (in case you forgot password : Warning : All passwrods will be deleted.)
 ```bash
  clim delete <username>
 
