@@ -11,7 +11,6 @@ import os from "os";
 import path from "path";
 import fs from "fs";
 
-// 🔹 Global DB location
 const dbPath = path.join(os.homedir(), ".cli-password-manager", "db.json");
 // Session file to persist logged-in user
 const sessionPath = path.join(os.homedir(), ".cli-password-manager", "session.json");
@@ -32,7 +31,6 @@ db.data ||= { users: [] };
 await db.write();
 
 
-// Encryption setup
 const ALGO = "aes-256-ctr";
 const SECRET = crypto.createHash("sha256").update("supersecretkey123").digest(); // 32 bytes key
 const IV = crypto.randomBytes(16); // Initialization vector
